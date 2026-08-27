@@ -1,0 +1,42 @@
+name: http-proxy
+
+services:
+  proxy:
+    image: 3proxy/3proxy:1.0.0
+    container_name: http-proxy
+    restart: unless-stopped
+    ports:
+      # Host bind address:port -> container port.
+      - "${PROXY_BIND:-0.0.0.0}:${PROXY_PORT:-3128}:3128"
+    configs:
+      - source: proxy_config
+        target: /etc/3proxy/3proxy.cfg
+    # 3proxy reads credentials from the config file above, not from these vars.
+    # They exist so that editing .env changes the container spec, which makes
+    # `docker compose up -d` recreate the container instead of silently
+    # leaving the old credentials running.
+    environment:
+      PROXY_USER: ${PROXY_USER:?PROXY_USER must be set in .env}
+      PROXY_PASS: ${PROXY_PASS:?PROXY_PASS must be set in .env}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+configs:
+  # Rendered by Compose from .env at "up" time, then mounted read-only.
+  # The image is distroless, so substitution happens here rather than in an entrypoint.
+  proxy_config:
+    content: |
+      nserver 1.1.1.1
+      nserver 8.8.8.8
+      nscache 65536
+      timeouts 1 5 30 60 180 1800 15 60
+      log
+      auth strong
+      users ${PROXY_USER:?PROXY_USER must be set in .env}:CL:${PROXY_PASS:?PROXY_PASS must be set in .env}
+      allow ${PROXY_USER}
+      maxconn ${PROXY_MAXCONN:-200}
+      proxy -p3128 -i0.0.0.0
+      flush
